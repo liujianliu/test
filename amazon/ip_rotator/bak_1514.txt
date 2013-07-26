@@ -1,0 +1,146 @@
+# coding: utf8
+'''
+Created on 2013-7-11
+
+@author: liujian
+'''
+
+import json
+import re
+import Queue
+import os
+import csv
+import threading
+from fetch_book_links import FetchBookList
+from fetch_book_details import FetchBookDetails
+from ip_rotator.spider import Spider
+from ip_rotator.ip_pool import IpPool
+from proxy_spider import ProxySpider
+
+
+writer_lock = threading.RLock() 
+cache_lock = threading.RLock()
+class RankFetch():
+    
+    def __init__(self,ip_queue):        
+        f = open("config","r")
+        #载入json对象
+        self.json_config = json.load(f)
+        f.close()
+        self.spider = ProxySpider("duokan","localhost")
+        self.normal_spider=Spider("duokan","localhost")
+        self.marked ={}    
+        self.child_url_pattern =self.json_config["child_link_pattern"]
+        self.booklinks = FetchBookList()
+        self.book = FetchBookDetails()
+        self.cache ={}
+        self.ip_queue = ip_queue
+        
+    def fetch_ranks(self):
+        root_url = self.json_config["root"]
+        self.__bfs(root_url)
+
+    def __bfs(self,url):
+        myqueue = Queue.Queue(maxsize = 0)
+        url_pattern = self.child_url_pattern
+        myqueue.put(url)       
+        csvfile = open(self.json_config["csv_path"], 'wb')
+        csv_writer = csv.writer(csvfile,dialect="excel")
+#        count =1#用于测试
+        while not myqueue.empty():
+            current_url = myqueue.get()
+            self.marked[current_url]=True
+            #将该页面下的每个子链接入列
+            page = self.normal_spider.fetch(current_url,5,1.5)
+            #抓取该页面下childurl的链接 urlset是指childurlset可以无序
+            urlset=FetchBookList.fetch_list(page, url_pattern)
+            for url in urlset:
+                if self.marked.has_key(url): #说明已经被访问过
+                    pass
+                else:
+                    self.marked[url]=True
+                    myqueue.put(url)
+                    print url#抓取这个url的booklist,对booklist中的每个book写入cvs中
+                    page=self.normal_spider.fetch(url, nb_retries=20, retry_delay=1.5)
+                    booklinks = self.booklinks.fetch_book_list(page)
+#                    book_category = self.booklinks.fetch_book_category(page)
+                    p=self.json_config["book_category_pattern"]    
+                    book_category=self.book.fetch_content_string_match(p[0].encode(), p[1].encode(), page)   #book_category之所以要拿出来解析是因为book_detail里面没有 category信息...          
+                    rank = 0
+                    threads=[]
+                    
+                    
+                    for booklink in booklinks:
+                        rank = rank+1
+                        p=self.ip_queue.get()
+                        tr = threading.Thread(target=self.multi_thread_fetch,args=(p,csv_writer,booklink,rank,book_category))
+                        threads.append(tr)
+                        self.ip_queue.put(p)
+                    for thread in threads:
+                        thread.start()
+                    for thread in threads:
+                        thread.join()
+                        
+#                        #在这里加入缓存 key 为booklink ,value为html
+#                        bookpage=""
+#                        if not self.cache.has_key(booklink):
+#                            bookpage=self.spider.fetch(booklink, nb_retries=20, retry_delay=1.5)
+#                            book_json=self.book.fetch_book(bookpage)
+#                            book_json["rank"]=str(rank)
+#                            
+#                            book_json["category"]=book_category
+#                            content = book_json.values()
+#                            self.cache[booklink]=content
+#                            csv_writer.writerow(content)                           
+#                        else:
+#                            csv_writer.writerow(self.cache[booklink])                                                
+#            count= count-1
+        csvfile.close()
+        
+    def multi_thread_fetch(self,proxy,csv_writer,booklink,rank,book_category):
+        cache_lock.acquire()
+        flag = self.cache.has_key(booklink)#此处有待改进
+        cache_lock.release()
+        if not flag:
+            bookpage = self.spider.fetch(url=booklink, proxy=proxy, nb_retries=5, retry_delay=1.5)
+            book_json=self.book.fetch_book(bookpage)
+            book_json["rank"]=str(rank)            
+            book_json["category"]=book_category
+            content = book_json.values()
+            cache_lock.acquire()
+            self.cache[booklink]=content
+            cache_lock.release()
+            writer_lock.acquire()
+            csv_writer.writerow(content)
+            writer_lock.release()
+        else:
+            cache_lock.acquire()
+            self.cache[booklink][7]=str(rank)
+            self.cache[booklink][0]=book_category
+            ret = self.cache[booklink]
+            cache_lock.release()
+            
+            writer_lock.acquire()
+            csv_writer.writerow(ret) 
+            writer_lock.release()
+            
+        pass                
+                        
+                   
+
+if __name__=="__main__":
+    ip_pool = IpPool()
+#    ip_pool.update_iplist()
+    #得到线程安全的ip队列
+    ip_q = ip_pool.ip_queue()
+    fcl =RankFetch(ip_queue=ip_q)
+    fcl.fetch_ranks()
+#    url ="http://www.amazon.cn/gp/bestsellers/digital-text/143579071/ref=zg_bs_nav_kinc_2_116169071"
+#    html = fcl.spider.fetch(url, 5, 1.5)
+#    current_file_path= fcl.json_config["root_path"]
+#    current_file_path = unicode(current_file_path)
+#    
+#    fcl.process_url(url, current_file_path)
+#    fcl.fetch_child_links()
+
+        

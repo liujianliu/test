@@ -1,0 +1,32 @@
+{
+
+"csv_path":"/root/Desktop/amazon/kingdle_rank.csv",
+"csv_bak_path":"/root/Desktop/amazon/kindle_rank_bak.csv",
+
+"root":"http://www.amazon.cn/gp/bestsellers/digital-text/116169071/ref=zg_bs_unv_kinc_2_143182071_2",
+
+"page_pattern":"http://www.amazon.cn/gp/bestsellers/digital-text/[0-9]+/ref=zg_bs_[0-9]+_pg_[0-9]+/\\d+-\\d+-\\d+\\?ie=UTF8&pg=[0-9]+",
+
+"book_category_pattern":["<span class=\"category\">","</span>"],
+
+"book":{
+"title":["<span id=\"btAsinTitle\">","<span"],
+"kindleprice":["<b class=\"priceLarge\">","</b>"],
+"versions":["版本：</b>","</li>"],
+"code":["ASIN:</b>","</li>"],
+"publisher":["出版社:</b>","</li>"],
+"brand":["品牌:</b>","</li>"]
+
+},
+
+
+"book_link_pattern":"http://www.amazon.cn/[%0-9A-Za-z\\-]+/dp/B00[0-9A-Z]+/ref=zg_bs_[0-9]+_[0-9]+",
+
+"child_link_pattern":"http://www.amazon.cn/gp/bestsellers/digital-text/\\d+/ref=zg_bs_nav_kinc_\\d_\\d+",
+
+"deapth":"4",
+
+
+"root_path":"d:/"
+
+}
